@@ -40,6 +40,15 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
 	}
 }
 
+struct QueueFamilyIndices {
+	std::optional<uint32_t> graphicsFamily; // optional을 사용하면 값이 존재하는지 여부를 확인 가능
+
+	bool isComplete() {
+		return graphicsFamily.has_value();
+	}
+
+};
+
 class HelloTriangleApplication {
 public:
 	void run() {
@@ -54,6 +63,9 @@ private:
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE; // Vk인스터스 해제시 같이 해제됨
+	VkDevice device; // logical device
+	VkQueue graphicsQueue; // device 해제시 같이 해제
+
 
 	void initWindow() {
 		glfwInit();
@@ -69,6 +81,7 @@ private:
 		createInstance();
 		setupDebugMessenger();
 		pickPhysicalDevice();
+		createLogicalDevice();
 	}
 
 	void mainLoop() {
@@ -80,6 +93,7 @@ private:
 	}
 
 	void cleanup() {
+		vkDestroyDevice(device, nullptr);
 		if (enableValidationLayers) {
 			DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 		}
@@ -133,6 +147,7 @@ private:
 		if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
 			throw std::runtime_error("failde to create instance!");
 		}
+
 	}
 
 	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
@@ -179,17 +194,8 @@ private:
 	bool isDeviceSuitable(VkPhysicalDevice device) {
 		QueueFamilyIndices indices = findQueueFamilies(device);
 
-		return indices.graphicsFamily.isComplete();
+		return indices.isComplete();
 	}
-
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily; // optional을 사용하면 값이 존재하는지 여부를 확인 가능
-
-		bool isComplete() {
-			return graphicsFamily.has_value();
-		}
-
-	};
 
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
 		QueueFamilyIndices indices;
@@ -205,10 +211,50 @@ private:
 				indices.graphicsFamily = i;
 			}
 
+			if (indices.isComplete()) {
+				break;
+			}
+
 			i++;
 		}
 		return indices;
 	}
+
+	void createLogicalDevice() {
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+		VkDeviceQueueCreateInfo queueCreateInfo{};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+		queueCreateInfo.queueCount = 1;
+
+		float queuePriority = 1.0f;
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		VkPhysicalDeviceFeatures deviceFeatures{};
+
+		VkDeviceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		createInfo.pQueueCreateInfos = &queueCreateInfo;
+		createInfo.queueCreateInfoCount = 1;
+		createInfo.pEnabledFeatures = &deviceFeatures;
+		createInfo.enabledExtensionCount = 0;
+
+		if (enableValidationLayers) {
+			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			createInfo.ppEnabledLayerNames = validationLayers.data();
+		}
+		else {
+			createInfo.enabledLayerCount = 0;
+		}
+
+		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+			throw std::runtime_error("failde to create logical device!");
+		}
+
+		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
+	}
+
 
 	bool checkValidationLayerSupport() {
 		uint32_t layerCount;
